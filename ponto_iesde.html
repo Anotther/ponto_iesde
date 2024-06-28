@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Registro de Ponto</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #2c2c2c;
+            color: #f0f0f0;
+            box-sizing: border-box;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #3a3a3a;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        h1, h2 {
+            color: #f0f0f0;
+            text-align: center;
+        }
+        .input-group {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .input-group input, .input-group select {
+            width: 30%;
+            padding: 5px;
+            background-color: #4a4a4a;
+            border: 1px solid #6a6a6a;
+            color: #f0f0f0;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 1em;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0069d9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #6a6a6a;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #4a4a4a;
+        }
+        #chart {
+            margin-top: 20px;
+        }
+        .total-row {
+            font-weight: bold;
+            background-color: #5a5a5a;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgb(0,0,0);
+            background-color: rgba(0,0,0,0.4);
+            padding-top: 60px;
+        }
+        .modal-content {
+            background-color: #3a3a3a;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 8px;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close:hover,
+        .close:focus {
+            color: #000;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Registro Ponto</h1>
+        <div class="input-group">
+            <input type="date" id="dataRegistro">
+            <input type="time" id="horaRegistro">
+        </div>
+        <button id="registrarPontoBtn">Registrar Ponto</button>
+        <h2>Registro do Dia</h2>
+        <table id="registrosDia">
+            <tr>
+                <th>Tipo</th>
+                <th>Horário</th>
+                <th>Status</th>
+            </tr>
+        </table>
+        <button id="alterarPontoBtn" style="width: auto;">Alterar Ponto</button>
+        <h2>Histórico</h2>
+        <div class="input-group">
+            <select id="anoFiltro">
+                <option value="2024">2024</option>
+            </select>
+            <select id="mesFiltro"></select>
+            <input type="date" id="dataFiltro">
+        </div>
+        <table id="historicoRegistros">
+            <tr>
+                <th>Data</th>
+                <th>Entrada</th>
+                <th>Saída Almoço</th>
+                <th>Retorno Almoço</th>
+                <th>Saída</th>
+                <th>Horas Trabalhadas</th>
+                <th>Status</th>
+            </tr>
+        </table>
+        <button id="exportarCSVBtn">Exportar Histórico para CSV</button>
+        <canvas id="chart"></canvas>
+    </div>
+
+    <div id="alterarPontoModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Alterar Ponto do Dia Atual</h2>
+            <table id="alterarPontosDia">
+                <tr>
+                    <th>Tipo</th>
+                    <th>Horário</th>
+                    <th>Alterar Horário</th>
+                </tr>
+            </table>
+            <button id="salvarAlteracoesBtn">Salvar Alterações</button>
+        </div>
+    </div>
+
+    <script>
+        let registros = JSON.parse(localStorage.getItem('registros')) || {};
+
+        function atualizarDataHora() {
+            const agora = moment();
+            document.getElementById('dataRegistro').value = agora.format('YYYY-MM-DD');
+            document.getElementById('horaRegistro').value = agora.format('HH:mm');
+        }
+
+        function registrarPonto() {
+            const dataRegistro = document.getElementById('dataRegistro').value;
+            const horaRegistro = document.getElementById('horaRegistro').value;
+
+            if (!registros[dataRegistro]) {
+                registros[dataRegistro] = [];
+            }
+
+            if (registros[dataRegistro].length >= 4) {
+                alert('Você já registrou 4 pontos hoje.');
+                return;
+            }
+
+            const tipo = getTipoPonto(registros[dataRegistro].length);
+            const status = verificarStatus(tipo, horaRegistro);
+
+            registros[dataRegistro].push({
+                tipo,
+                horario: horaRegistro,
+                status
+            });
+
+            localStorage.setItem('registros', JSON.stringify(registros));
+            atualizarRegistrosDia(dataRegistro);
+            atualizarHistorico();
+
+            alert(`Ponto registrado com sucesso!\nTipo: ${tipo}\nHorário: ${horaRegistro}\nStatus: ${status}`);
+        }
+
+        function abrirModalAlterarPonto() {
+            const modal = document.getElementById('alterarPontoModal');
+            const tabela = document.getElementById('alterarPontosDia');
+            const dataRegistro = moment().format('YYYY-MM-DD');
+            const registrosDia = registros[dataRegistro] || [];
+
+            while (tabela.rows.length > 1) {
+                tabela.deleteRow(1);
+            }
+
+            registrosDia.forEach((registro, index) => {
+                const row = tabela.insertRow(-1);
+                row.insertCell(0).textContent = registro.tipo;
+                row.insertCell(1).textContent = registro.horario;
+
+                const inputHora = document.createElement('input');
+                inputHora.type = 'time';
+                inputHora.value = registro.horario;
+                inputHora.dataset.index = index;
+
+                row.insertCell(2).appendChild(inputHora);
+            });
+
+            modal.style.display = "block";
+        }
+
+        function salvarAlteracoes() {
+            const tabela = document.getElementById('alterarPontosDia');
+            const dataRegistro = moment().format('YYYY-MM-DD');
+
+            for (let i = 1; i < tabela.rows.length; i++) {
+                const row = tabela.rows[i];
+                const index = row.cells[2].firstChild.dataset.index;
+                const novoHorario = row.cells[2].firstChild.value;
+
+                registros[dataRegistro][index].horario = novoHorario;
+                registros[dataRegistro][index].status = verificarStatus(registros[dataRegistro][index].tipo, novoHorario);
+            }
+
+            localStorage.setItem('registros', JSON.stringify(registros));
+            atualizarRegistrosDia(dataRegistro);
+            atualizarHistorico();
+
+            fecharModal();
+        }
+
+        function fecharModal() {
+            const modal = document.getElementById('alterarPontoModal');
+            modal.style.display = "none";
+        }
+
+        function getTipoPonto(numRegistros) {
+            const tipos = ['Entrada', 'Saída Almoço', 'Retorno Almoço', 'Saída'];
+            return tipos[numRegistros] || 'Extra';
+        }
+
+        function verificarStatus(tipo, horario) {
+            const inicioTrabalho = moment('08:00', 'HH:mm');
+            const inicioAlmoco = moment('12:00', 'HH:mm');
+            const retornoAlmoco = moment('13:00', 'HH:mm');
+            const fimTrabalho = moment('17:00', 'HH:mm');
+            const horaRegistro = moment(horario, 'HH:mm');
+
+            if (tipo === 'Entrada' && horaRegistro.isAfter(inicioTrabalho)) {
+                return 'Atraso';
+            } else if (tipo === 'Saída' && horaRegistro.isBefore(fimTrabalho)) {
+                return 'Saída Antecipada';
+            }
+
+            return 'Registrado';
+        }
+
+        function atualizarRegistrosDia(data) {
+            const registrosDia = registros[data] || [];
+            const tabela = document.getElementById('registrosDia');
+
+            while (tabela.rows.length > 1) {
+                tabela.deleteRow(1);
+            }
+
+            registrosDia.forEach(registro => {
+                const row = tabela.insertRow(-1);
+                row.insertCell(0).textContent = registro.tipo;
+                row.insertCell(1).textContent = registro.horario;
+                row.insertCell(2).textContent = registro.status;
+            });
+        }
+
+        function atualizarHistorico() {
+            const anoSelecionado = document.getElementById('anoFiltro').value;
+            const mesSelecionado = document.getElementById('mesFiltro').value;
+            const dataSelecionada = document.getElementById('dataFiltro').value;
+            
+            const tabela = document.getElementById('historicoRegistros');
+
+            while (tabela.rows.length > 1) {
+                tabela.deleteRow(1);
+            }
+
+            let totalHorasTrabalhadas = 0;
+
+            Object.entries(registros).forEach(([data, registrosDia]) => {
+                const [ano, mes, dia] = data.split('-');
+                
+                if ((anoSelecionado === 'todos' || ano === anoSelecionado) &&
+                    (mesSelecionado === 'todos' || parseInt(mes) === parseInt(mesSelecionado)) &&
+                    (!dataSelecionada || data === dataSelecionada)) {
+                    
+                    const row = tabela.insertRow(-1);
+                    row.insertCell(0).textContent = moment(data).format('DD/MM/YY');
+
+                    const horarios = registrosDia.reduce((acc, registro) => {
+                        acc[registro.tipo] = registro.horario;
+                        return acc;
+                    }, {});
+
+                    row.insertCell(1).textContent = horarios['Entrada'] || '-';
+                    row.insertCell(2).textContent = horarios['Saída Almoço'] || '-';
+                    row.insertCell(3).textContent = horarios['Retorno Almoço'] || '-';
+                    row.insertCell(4).textContent = horarios['Saída'] || '-';
+
+                    const horasTrabalhadas = calcularHorasTrabalhadas(registrosDia);
+                    row.insertCell(5).textContent = formatarHorasTrabalhadas(horasTrabalhadas);
+                    totalHorasTrabalhadas += horasTrabalhadas;
+
+                    const status = verificarStatusDia(registrosDia);
+                    row.insertCell(6).textContent = status;
+                }
+            });
+
+            // Adicionar linha de total
+            const totalRow = tabela.insertRow(-1);
+            totalRow.className = 'total-row';
+            totalRow.insertCell(0).textContent = 'Total';
+            totalRow.insertCell(1).textContent = '-';
+            totalRow.insertCell(2).textContent = '-';
+            totalRow.insertCell(3).textContent = '-';
+            totalRow.insertCell(4).textContent = '-';
+            totalRow.insertCell(5).textContent = formatarHorasTrabalhadas(totalHorasTrabalhadas);
+            totalRow.insertCell(6).textContent = '-';
+
+            atualizarGrafico();
+        }
+
+        function verificarStatusDia(registrosDia) {
+            if (registrosDia.length < 4) {
+                return 'Incompleto';
+            }
+
+            const atrasos = registrosDia.some(registro => registro.status === 'Atraso');
+            if (atrasos) {
+                return 'Atraso';
+            }
+
+            return 'Completo';
+        }
+
+        function calcularHorasTrabalhadas(registrosDia) {
+            if (registrosDia.length < 2) return 0;
+            
+            const entrada = moment(registrosDia.find(r => r.tipo === 'Entrada')?.horario, 'HH:mm');
+            const saida = moment(registrosDia.find(r => r.tipo === 'Saída')?.horario, 'HH:mm');
+            
+            if (!entrada.isValid() || !saida.isValid()) return 0;
+
+            let total = saida.diff(entrada, 'minutes');
+
+            const saidaAlmoco = moment(registrosDia.find(r => r.tipo === 'Saída Almoço')?.horario, 'HH:mm');
+            const retornoAlmoco = moment(registrosDia.find(r => r.tipo === 'Retorno Almoço')?.horario, 'HH:mm');
+            
+            if (saidaAlmoco.isValid() && retornoAlmoco.isValid()) {
+                total -= retornoAlmoco.diff(saidaAlmoco, 'minutes');
+            }
+            
+            return total;
+        }
+
+        function formatarHorasTrabalhadas(minutos) {
+            const horas = Math.floor(minutos / 60);
+            const minutosRestantes = minutos % 60;
+            return `${horas}:${minutosRestantes < 10 ? '0' + minutosRestantes : minutosRestantes}`;
+        }
+
+        function atualizarGrafico() {
+            const ctx = document.getElementById('chart').getContext('2d');
+            const dados = Object.entries(registros).map(([data, registrosDia]) => {
+                return { data: moment(data).format('DD/MM/YY'), horasTrabalhadas: calcularHorasTrabalhadas(registrosDia) / 60 };
+            });
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dados.map(d => d.data),
+                    datasets: [{
+                        label: 'Horas Trabalhadas',
+                        data: dados.map(d => d.horasTrabalhadas),
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Horas'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Data'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function popularFiltros() {
+            const mesFiltro = document.getElementById('mesFiltro');
+
+            mesFiltro.innerHTML = '<option value="todos">Todos os Meses</option>';
+            for (let i = 1; i <= 12; i++) {
+                mesFiltro.innerHTML += `<option value="${i}">${moment().month(i-1).format('MMMM')}</option>`;
+            }
+            mesFiltro.value = moment().month() + 1;
+        }
+
+        function exportarCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Data,Entrada,Saída Almoço,Retorno Almoço,Saída,Horas Trabalhadas,Status\n";
+
+            Object.entries(registros).forEach(([data, registrosDia]) => {
+                const horarios = registrosDia.reduce((acc, registro) => {
+                    acc[registro.tipo] = registro.horario;
+                    return acc;
+                }, {});
+
+                const horasTrabalhadas = formatarHorasTrabalhadas(calcularHorasTrabalhadas(registrosDia));
+                const status = verificarStatusDia(registrosDia);
+
+                csvContent += `${moment(data).format('DD/MM/YY')},${horarios['Entrada'] || '-'},${horarios['Saída Almoço'] || '-'},${horarios['Retorno Almoço'] || '-'},${horarios['Saída'] || '-'},${horasTrabalhadas},${status}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "historico_pontos.csv");
+            document.body.appendChild(link);
+            link.click();
+        }
+
+        document.getElementById('registrarPontoBtn').addEventListener('click', registrarPonto);
+        document.getElementById('alterarPontoBtn').addEventListener('click', abrirModalAlterarPonto);
+        document.getElementById('salvarAlteracoesBtn').addEventListener('click', salvarAlteracoes);
+        document.querySelector('.close').addEventListener('click', fecharModal);
+        document.getElementById('anoFiltro').addEventListener('change', atualizarHistorico);
+        document.getElementById('mesFiltro').addEventListener('change', atualizarHistorico);
+        document.getElementById('dataFiltro').addEventListener('change', atualizarHistorico);
+        document.getElementById('exportarCSVBtn').addEventListener('click', exportarCSV);
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('alterarPontoModal');
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+
+        atualizarDataHora();
+        popularFiltros();
+        atualizarRegistrosDia(moment().format('YYYY-MM-DD'));
+        atualizarHistorico();
+    </script>
+</body>
+</html>
