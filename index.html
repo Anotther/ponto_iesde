@@ -45,14 +45,14 @@
             padding: 10px;
             margin: 10px 0;
             font-size: 1em;
-            background-color: #007bff;
+            background-color: #141c37;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
         }
         button:hover {
-            background-color: #0069d9;
+            background-color: #1e2a59;
         }
         table {
             width: 100%;
@@ -126,7 +126,7 @@
                 <th>Status</th>
             </tr>
         </table>
-        <button id="alterarPontoBtn" style="width: auto;">Alterar Ponto</button>
+        <button id="alterarPontoBtn" style="width: auto; float: right;">Alterar Ponto</button>
         <h2>Histórico</h2>
         <div class="input-group">
             <select id="anoFiltro">
@@ -166,117 +166,64 @@
     </div>
 
     <script>
-        let registros = JSON.parse(localStorage.getItem('registros')) || {};
+        const API_URL = 'http://localhost:3000/registros';
 
-        function atualizarDataHora() {
-            const agora = moment();
-            document.getElementById('dataRegistro').value = agora.format('YYYY-MM-DD');
-            document.getElementById('horaRegistro').value = agora.format('HH:mm');
+        document.getElementById('registrarPontoBtn').addEventListener('click', registrarPonto);
+        document.getElementById('alterarPontoBtn').addEventListener('click', abrirModalAlterarPonto);
+        document.getElementById('salvarAlteracoesBtn').addEventListener('click', salvarAlteracoes);
+        document.querySelector('.close').addEventListener('click', fecharModal);
+        document.getElementById('anoFiltro').addEventListener('change', atualizarHistorico);
+        document.getElementById('mesFiltro').addEventListener('change', atualizarHistorico);
+        document.getElementById('dataFiltro').addEventListener('change', atualizarHistorico);
+        document.getElementById('exportarCSVBtn').addEventListener('click', exportarCSV);
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('alterarPontoModal');
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
         }
 
-        function registrarPonto() {
+        atualizarDataHora();
+        popularFiltros();
+        atualizarRegistrosDia(moment().format('YYYY-MM-DD'));
+        atualizarHistorico();
+
+        async function registrarPonto() {
             const dataRegistro = document.getElementById('dataRegistro').value;
             const horaRegistro = document.getElementById('horaRegistro').value;
 
-            if (!registros[dataRegistro]) {
-                registros[dataRegistro] = [];
-            }
-
-            if (registros[dataRegistro].length >= 4) {
-                alert('Você já registrou 4 pontos hoje.');
-                return;
-            }
-
-            const tipo = getTipoPonto(registros[dataRegistro].length);
+            const tipo = getTipoPonto((await getRegistrosDoDia(dataRegistro)).length);
             const status = verificarStatus(tipo, horaRegistro);
 
-            registros[dataRegistro].push({
+            const registro = {
+                data: dataRegistro,
                 tipo,
                 horario: horaRegistro,
                 status
+            };
+
+            await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(registro)
             });
 
-            localStorage.setItem('registros', JSON.stringify(registros));
             atualizarRegistrosDia(dataRegistro);
             atualizarHistorico();
 
             alert(`Ponto registrado com sucesso!\nTipo: ${tipo}\nHorário: ${horaRegistro}\nStatus: ${status}`);
         }
 
-        function abrirModalAlterarPonto() {
-            const modal = document.getElementById('alterarPontoModal');
-            const tabela = document.getElementById('alterarPontosDia');
-            const dataRegistro = moment().format('YYYY-MM-DD');
-            const registrosDia = registros[dataRegistro] || [];
-
-            while (tabela.rows.length > 1) {
-                tabela.deleteRow(1);
-            }
-
-            registrosDia.forEach((registro, index) => {
-                const row = tabela.insertRow(-1);
-                row.insertCell(0).textContent = registro.tipo;
-                row.insertCell(1).textContent = registro.horario;
-
-                const inputHora = document.createElement('input');
-                inputHora.type = 'time';
-                inputHora.value = registro.horario;
-                inputHora.dataset.index = index;
-
-                row.insertCell(2).appendChild(inputHora);
-            });
-
-            modal.style.display = "block";
+        async function getRegistrosDoDia(data) {
+            const response = await fetch(`${API_URL}?data=${data}`);
+            return await response.json();
         }
 
-        function salvarAlteracoes() {
-            const tabela = document.getElementById('alterarPontosDia');
-            const dataRegistro = moment().format('YYYY-MM-DD');
-
-            for (let i = 1; i < tabela.rows.length; i++) {
-                const row = tabela.rows[i];
-                const index = row.cells[2].firstChild.dataset.index;
-                const novoHorario = row.cells[2].firstChild.value;
-
-                registros[dataRegistro][index].horario = novoHorario;
-                registros[dataRegistro][index].status = verificarStatus(registros[dataRegistro][index].tipo, novoHorario);
-            }
-
-            localStorage.setItem('registros', JSON.stringify(registros));
-            atualizarRegistrosDia(dataRegistro);
-            atualizarHistorico();
-
-            fecharModal();
-        }
-
-        function fecharModal() {
-            const modal = document.getElementById('alterarPontoModal');
-            modal.style.display = "none";
-        }
-
-        function getTipoPonto(numRegistros) {
-            const tipos = ['Entrada', 'Saída Almoço', 'Retorno Almoço', 'Saída'];
-            return tipos[numRegistros] || 'Extra';
-        }
-
-        function verificarStatus(tipo, horario) {
-            const inicioTrabalho = moment('08:00', 'HH:mm');
-            const inicioAlmoco = moment('12:00', 'HH:mm');
-            const retornoAlmoco = moment('13:00', 'HH:mm');
-            const fimTrabalho = moment('17:00', 'HH:mm');
-            const horaRegistro = moment(horario, 'HH:mm');
-
-            if (tipo === 'Entrada' && horaRegistro.isAfter(inicioTrabalho)) {
-                return 'Atraso';
-            } else if (tipo === 'Saída' && horaRegistro.isBefore(fimTrabalho)) {
-                return 'Saída Antecipada';
-            }
-
-            return 'Registrado';
-        }
-
-        function atualizarRegistrosDia(data) {
-            const registrosDia = registros[data] || [];
+        async function atualizarRegistrosDia(data) {
+            const registrosDia = await getRegistrosDoDia(data);
             const tabela = document.getElementById('registrosDia');
 
             while (tabela.rows.length > 1) {
@@ -291,7 +238,10 @@
             });
         }
 
-        function atualizarHistorico() {
+        async function atualizarHistorico() {
+            const response = await fetch(API_URL);
+            const registros = await response.json();
+
             const anoSelecionado = document.getElementById('anoFiltro').value;
             const mesSelecionado = document.getElementById('mesFiltro').value;
             const dataSelecionada = document.getElementById('dataFiltro').value;
@@ -304,7 +254,8 @@
 
             let totalHorasTrabalhadas = 0;
 
-            Object.entries(registros).forEach(([data, registrosDia]) => {
+            registros.forEach(registro => {
+                const data = registro.data;
                 const [ano, mes, dia] = data.split('-');
                 
                 if ((anoSelecionado === 'todos' || ano === anoSelecionado) &&
@@ -314,7 +265,7 @@
                     const row = tabela.insertRow(-1);
                     row.insertCell(0).textContent = moment(data).format('DD/MM/YY');
 
-                    const horarios = registrosDia.reduce((acc, registro) => {
+                    const horarios = registros.reduce((acc, registro) => {
                         acc[registro.tipo] = registro.horario;
                         return acc;
                     }, {});
@@ -324,11 +275,11 @@
                     row.insertCell(3).textContent = horarios['Retorno Almoço'] || '-';
                     row.insertCell(4).textContent = horarios['Saída'] || '-';
 
-                    const horasTrabalhadas = calcularHorasTrabalhadas(registrosDia);
+                    const horasTrabalhadas = calcularHorasTrabalhadas(registros);
                     row.insertCell(5).textContent = formatarHorasTrabalhadas(horasTrabalhadas);
                     totalHorasTrabalhadas += horasTrabalhadas;
 
-                    const status = verificarStatusDia(registrosDia);
+                    const status = verificarStatusDia(registros);
                     row.insertCell(6).textContent = status;
                 }
             });
@@ -457,26 +408,64 @@
             link.click();
         }
 
-        document.getElementById('registrarPontoBtn').addEventListener('click', registrarPonto);
-        document.getElementById('alterarPontoBtn').addEventListener('click', abrirModalAlterarPonto);
-        document.getElementById('salvarAlteracoesBtn').addEventListener('click', salvarAlteracoes);
-        document.querySelector('.close').addEventListener('click', fecharModal);
-        document.getElementById('anoFiltro').addEventListener('change', atualizarHistorico);
-        document.getElementById('mesFiltro').addEventListener('change', atualizarHistorico);
-        document.getElementById('dataFiltro').addEventListener('change', atualizarHistorico);
-        document.getElementById('exportarCSVBtn').addEventListener('click', exportarCSV);
-
-        window.onclick = function(event) {
+        async function abrirModalAlterarPonto() {
             const modal = document.getElementById('alterarPontoModal');
-            if (event.target == modal) {
-                modal.style.display = "none";
+            const tabela = document.getElementById('alterarPontosDia');
+            const dataRegistro = moment().format('YYYY-MM-DD');
+            const registrosDia = await getRegistrosDoDia(dataRegistro);
+
+            while (tabela.rows.length > 1) {
+                tabela.deleteRow(1);
             }
+
+            registrosDia.forEach((registro, index) => {
+                const row = tabela.insertRow(-1);
+                row.insertCell(0).textContent = registro.tipo;
+                row.insertCell(1).textContent = registro.horario;
+
+                const inputHora = document.createElement('input');
+                inputHora.type = 'time';
+                inputHora.value = registro.horario;
+                inputHora.dataset.index = index;
+
+                row.insertCell(2).appendChild(inputHora);
+            });
+
+            modal.style.display = "block";
         }
 
-        atualizarDataHora();
-        popularFiltros();
-        atualizarRegistrosDia(moment().format('YYYY-MM-DD'));
-        atualizarHistorico();
+        async function salvarAlteracoes() {
+            const tabela = document.getElementById('alterarPontosDia');
+            const dataRegistro = moment().format('YYYY-MM-DD');
+            const registrosDia = await getRegistrosDoDia(dataRegistro);
+
+            for (let i = 1; i < tabela.rows.length; i++) {
+                const row = tabela.rows[i];
+                const index = row.cells[2].firstChild.dataset.index;
+                const novoHorario = row.cells[2].firstChild.value;
+
+                registrosDia[index].horario = novoHorario;
+                registrosDia[index].status = verificarStatus(registrosDia[index].tipo, novoHorario);
+                
+                await fetch(`${API_URL}/${registrosDia[index]._id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(registrosDia[index])
+                });
+            }
+
+            atualizarRegistrosDia(dataRegistro);
+            atualizarHistorico();
+
+            fecharModal();
+        }
+
+        function fecharModal() {
+            const modal = document.getElementById('alterarPontoModal');
+            modal.style.display = "none";
+        }
     </script>
 </body>
 </html>
